@@ -1,9 +1,12 @@
+
 require('dotenv').config();
-const sql = require('mssql');
 
 const express = require('express');
+const sql = require('mssql');
 const app = express();
-// SQL Server connection settings
+
+app.use(express.json());
+
 const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -15,12 +18,13 @@ const dbConfig = {
     trustServerCertificate: true
   }
 };
-// Route 1: Homepage
+
+// Homepage
 app.get('/', (req, res) => {
   res.send('Welcome to the Book Category API');
 });
 
-// Route 2: Categories
+// Categories
 app.get('/categories', (req, res) => {
   res.json([
     { id: 1, name: 'Fiction' },
@@ -29,9 +33,259 @@ app.get('/categories', (req, res) => {
   ]);
 });
 
-// Route 3: About
+// About
 app.get('/about', (req, res) => {
-  res.send('I am a Year 1 IT student at Ngee Ann Polytechnic. I am learning Node.js and Express.');
+  res.send('I am a Year 1 IT student at Ngee Ann Polytechnic.');
+});
+
+// Get all authors
+app.get('/authors', async (req, res) => {
+  try {
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request()
+      .query('SELECT * FROM Author');
+
+    res.status(200).json(result.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Get author by ID
+app.get('/authors/:id', async (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid ID' });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM Author WHERE AuthorID = @id');
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'Author not found' });
+    }
+
+    res.status(200).json(result.recordset[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+// Create a new author
+app.post('/authors', async (req, res) => {
+  const { id, name } = req.body;
+
+  try {
+    const pool = await sql.connect(dbConfig);
+
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .input('name', sql.NVarChar, name)
+      .query(`
+        INSERT INTO Author (AuthorID, Name)
+        OUTPUT INSERTED.*
+        VALUES (@id, @name)
+      `);
+
+    res.status(201).json(result.recordset[0]);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+// Update an author
+app.put('/authors/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const { name } = req.body;
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid author id' });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .input('name', sql.NVarChar, name)
+      .query(`
+        UPDATE Author
+        SET Name = @name
+        OUTPUT INSERTED.*
+        WHERE AuthorID = @id
+      `);
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    res.status(200).json(result.recordset[0]);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+// Get all publishers
+app.get('/publishers', async (req, res) => {
+  try {
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request()
+      .query('SELECT * FROM Publisher');
+
+    res.status(200).json(result.recordset);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Delete an author
+app.delete('/authors/:id', async (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid author id' });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM Author WHERE AuthorID = @id');
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    res.status(204).send();
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Get publisher by ID
+app.get('/publishers/:id', async (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid ID' });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('SELECT * FROM Publisher WHERE PublisherID = @id');
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'Publisher not found' });
+    }
+
+    res.status(200).json(result.recordset[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Create publisher
+app.post('/publishers', async (req, res) => {
+  const { PublisherID, Name } = req.body || {};
+
+  // Validate the input
+  if (!Number.isInteger(PublisherID) || PublisherID <= 0 ||
+      typeof Name !== 'string' || !Name.trim()) {
+    return res.status(400).json({
+      error: 'Valid PublisherID and Name are required'
+    });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+
+    const result = await pool.request()
+      .input('id', sql.Int, PublisherID)
+      .input('name', sql.NVarChar, Name.trim())
+      .query(`
+        INSERT INTO Publisher (PublisherID, Name)
+        OUTPUT INSERTED.PublisherID, INSERTED.Name
+        VALUES (@id, @name)
+      `);
+
+    res.status(201).json(result.recordset[0]);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Update publisher
+app.put('/publishers/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const { Name } = req.body || {};
+
+  if (!Number.isInteger(id) || id <= 0 ||
+      typeof Name !== 'string' || !Name.trim()) {
+    return res.status(400).json({ error: 'Invalid input' });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .input('name', sql.NVarChar, Name.trim())
+      .query(`
+        UPDATE Publisher
+        SET Name = @name
+        OUTPUT INSERTED.PublisherID, INSERTED.Name
+        WHERE PublisherID = @id
+      `);
+
+    if (result.recordset.length === 0) {
+      return res.status(404).json({ error: 'Publisher not found' });
+    }
+
+    res.status(200).json(result.recordset[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
+});
+
+// Delete publisher
+app.delete('/publishers/:id', async (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'Invalid ID' });
+  }
+
+  try {
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request()
+      .input('id', sql.Int, id)
+      .query('DELETE FROM Publisher WHERE PublisherID = @id');
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(404).json({ error: 'Publisher not found' });
+    }
+
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 // Start server

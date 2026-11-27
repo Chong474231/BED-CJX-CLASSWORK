@@ -404,7 +404,107 @@ app.post('/books', async (req, res) => {
         if (connection) await connection.close();
     }
 });
+// Lab 7 - GET a specific book copy
+app.get('/books/:isbn/copies/:copyNo', async (req, res) => {
+    let connection;
 
+    try {
+        connection = await sql.connect(dbConfig);
+
+        const request = connection.request();
+
+        request.input('isbn', sql.Char(10), req.params.isbn);
+        request.input('copyNo', sql.TinyInt, req.params.copyNo);
+
+        const result = await request.query(`
+            SELECT ISBN, CopyNo, RentalRate, Status
+            FROM BookCopy
+            WHERE ISBN = @isbn AND CopyNo = @copyNo
+        `);
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ error: 'Not found' });
+        }
+
+        res.status(200).json(result.recordset[0]);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Database error' });
+
+    } finally {
+        if (connection) await connection.close();
+    }
+});
+// Lab 7 - Update a book copy's rental rate
+app.put('/books/:isbn/copies/:copyNo', async (req, res) => {
+    let connection;
+
+    try {
+        connection = await sql.connect(dbConfig);
+        const request = connection.request();
+
+        // Identify the specific book copy
+        request.input('isbn', sql.Char(10), req.params.isbn);
+        request.input('copyNo', sql.TinyInt, req.params.copyNo);
+
+        // Retrieve the new rental rate from the request body
+        request.input('rentalRate', sql.SmallMoney, req.body.rentalRate);
+
+        const result = await request.query(`
+            UPDATE BookCopy
+            SET RentalRate = @rentalRate
+            OUTPUT INSERTED.*
+            WHERE ISBN = @isbn AND CopyNo = @copyNo
+        `);
+
+        // Check whether the book copy exists
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).json({ error: 'Not found' });
+        }
+
+        // Return the updated record
+        res.status(200).json(result.recordset[0]);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Database error' });
+    } finally {
+        if (connection) await connection.close();
+    }
+});
+// Lab 7 - Delete a specific book copy
+app.delete('/books/:isbn/copies/:copyNo', async (req, res) => {
+    let connection;
+
+    try {
+        connection = await sql.connect(dbConfig);
+        const request = connection.request();
+
+        // Identify the specific book copy
+        request.input('isbn', sql.Char(10), req.params.isbn);
+        request.input('copyNo', sql.TinyInt, req.params.copyNo);
+
+        const result = await request.query(`
+            DELETE FROM BookCopy
+            WHERE ISBN = @isbn AND CopyNo = @copyNo
+        `);
+
+        // Check whether the record exists
+        if (result.rowsAffected[0] === 0) {
+            return res.status(404).json({ error: 'Not found' });
+        }
+
+        // Successfully deleted
+        res.status(204).send();
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Database error' });
+    } finally {
+        if (connection) await connection.close();
+    }
+});
 // Start server
 app.listen(3000, () => {
   console.log('Listening on port 3000');

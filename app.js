@@ -287,6 +287,123 @@ app.delete('/publishers/:id', async (req, res) => {
     res.status(500).json({ error: 'Database error' });
   }
 });
+// Lab 6 - GET all books
+app.get('/books', async (req, res) => {
+    let connection;
+
+    try {
+        connection = await sql.connect(dbConfig);
+
+        const result = await connection.request().query(
+            'SELECT ISBN, Title, YearPublish, PublisherID, BookCat FROM Book'
+        );
+
+        res.status(200).json(result.recordset);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Database error' });
+
+    } finally {
+        if (connection) await connection.close();
+    }
+});
+// GET one book by ISBN
+app.get('/books/:isbn', async (req, res) => {
+    let connection;
+
+    try {
+        connection = await sql.connect(dbConfig);
+
+        const request = connection.request();
+
+        request.input('isbn', sql.Char(10), req.params.isbn);
+
+        const result = await request.query(
+            'SELECT ISBN, Title, YearPublish, PublisherID, BookCat FROM Book WHERE ISBN = @isbn'
+        );
+
+        if (result.recordset.length === 0) {
+            return res.status(404).json({ error: 'Not found' });
+        }
+
+        res.status(200).json(result.recordset[0]);
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Database error' });
+
+    } finally {
+        if (connection) await connection.close();
+    }
+});
+// Lab 6 - Create a book with its author
+app.post('/books', async (req, res) => {
+    const {
+        isbn, title, yearPublish,
+        publisherId, bookCat, authorId
+    } = req.body;
+
+    let connection;
+    let transaction;
+
+    try {
+        connection = await sql.connect(dbConfig);
+
+        transaction = new sql.Transaction(connection);
+        await transaction.begin();
+
+        // Insert the book
+        const book = transaction.request();
+
+        book.input('isbn', sql.Char(10), isbn);
+        book.input('title', sql.VarChar(200), title);
+        book.input('yearPublish', sql.Char(4), yearPublish);
+        book.input('publisherId', sql.SmallInt, publisherId);
+        book.input('bookCat', sql.Char(2), bookCat);
+
+        const result = await book.query(`
+            INSERT INTO Book
+            (ISBN, Title, YearPublish, PublisherID, BookCat)
+            OUTPUT INSERTED.*
+            VALUES
+            (@isbn, @title, @yearPublish, @publisherId, @bookCat)
+        `);
+
+        // Insert the book-author relationship
+        const author = transaction.request();
+
+        author.input('isbn', sql.Char(10), isbn);
+        author.input('authorId', sql.SmallInt, authorId);
+
+        await author.query(`
+            INSERT INTO BookAuthor (ISBN, AuthorID)
+            VALUES (@isbn, @authorId)
+        `);
+
+        // Save both operations
+        await transaction.commit();
+
+        res.status(201).json(result.recordset[0]);
+
+    } catch (err) {
+        console.error(err);
+
+        // Undo changes if an operation fails
+        if (transaction) {
+            try {
+                await transaction.rollback();
+            } catch (rollbackErr) {
+                console.error(rollbackErr);
+            }
+        }
+
+        res.status(500).json({ error: 'Database error' });
+
+    } finally {
+        if (connection) await connection.close();
+    }
+});
 
 // Start server
 app.listen(3000, () => {

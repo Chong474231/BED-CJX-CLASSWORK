@@ -505,6 +505,65 @@ app.delete('/books/:isbn/copies/:copyNo', async (req, res) => {
         if (connection) await connection.close();
     }
 });
+// Lab 8 - Check whether a book copy is available
+async function checkAvailable(isbn, copyNo) {
+    let connection;
+
+    try {
+        connection = await sql.connect(dbConfig);
+
+        const result = await connection.request()
+            .input('isbn', sql.Char(10), isbn)
+            .input('copyNo', sql.TinyInt, copyNo)
+            .query('SELECT Status FROM BookCopy WHERE ISBN = @isbn AND CopyNo = @copyNo');
+
+        if (result.recordset.length === 0) return null;
+
+        return result.recordset[0].Status === 'D';
+
+    } finally {
+        if (connection) await connection.close();
+    }
+}
+// Lab 8 - Mark a book copy as rented
+async function markRented(isbn, copyNo) {
+    let connection;
+
+    try {
+        connection = await sql.connect(dbConfig);
+
+        await connection.request()
+            .input('isbn', sql.Char(10), isbn)
+            .input('copyNo', sql.TinyInt, copyNo)
+            .query("UPDATE BookCopy SET Status = 'M' WHERE ISBN = @isbn AND CopyNo = @copyNo");
+
+    } finally {
+        if (connection) await connection.close();
+    }
+}
+// Lab 8 - Rent a book copy
+app.put('/books/:isbn/copies/:copyNo/rent', async (req, res) => {
+    const isbn = req.params.isbn;
+    const copyNo = parseInt(req.params.copyNo);
+
+    try {
+        const available = await checkAvailable(isbn, copyNo);
+
+        if (available === null)
+            return res.status(404).json({ error: 'Not found' });
+
+        if (available === false)
+            return res.status(409).json({ error: 'Copy is already rented' });
+
+        await markRented(isbn, copyNo);
+
+        res.status(200).json({ ISBN: isbn, copyNo: copyNo, Status: 'M' });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
 // Start server
 app.listen(3000, () => {
   console.log('Listening on port 3000');

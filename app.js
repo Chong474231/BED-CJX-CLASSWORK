@@ -1,9 +1,15 @@
-
 require('dotenv').config();
 
 const express = require('express');
 const sql = require('mssql');
 const app = express();
+const Joi = require('joi');
+
+// Lab 9 - Validation schema
+const copySchema = Joi.object({
+    isbn: Joi.string().length(10).required(),
+    copyNo: Joi.number().integer().min(1).required()
+});
 
 app.use(express.json());
 
@@ -541,11 +547,31 @@ async function markRented(isbn, copyNo) {
         if (connection) await connection.close();
     }
 }
+// Lab 9 - Mark a book copy as returned
+async function markReturned(isbn, copyNo) {
+    let connection;
+
+    try {
+        connection = await sql.connect(dbConfig);
+
+        await connection.request()
+            .input('isbn', sql.Char(10), isbn)
+            .input('copyNo', sql.TinyInt, copyNo)
+            .query("UPDATE BookCopy SET Status = 'D' WHERE ISBN = @isbn AND CopyNo = @copyNo");
+
+    } finally {
+        if (connection) await connection.close();
+    }
+}
 // Lab 8 - Rent a book copy
 app.put('/books/:isbn/copies/:copyNo/rent', async (req, res) => {
-    const isbn = req.params.isbn;
-    const copyNo = parseInt(req.params.copyNo);
+    const { error, value } = copySchema.validate(req.params);
 
+if (error)
+    return res.status(400).json({ error: error.details[0].message });
+
+const isbn = value.isbn;
+const copyNo = value.copyNo;
     try {
         const available = await checkAvailable(isbn, copyNo);
 
@@ -558,6 +584,31 @@ app.put('/books/:isbn/copies/:copyNo/rent', async (req, res) => {
         await markRented(isbn, copyNo);
 
         res.status(200).json({ ISBN: isbn, copyNo: copyNo, Status: 'M' });
+
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+// Lab 9 - Return a book copy
+app.put('/books/:isbn/copies/:copyNo/return', async (req, res) => {
+    const { error, value } = copySchema.validate(req.params);
+
+    if (error)
+        return res.status(400).json({ error: error.details[0].message });
+
+    try {
+        const available = await checkAvailable(value.isbn, value.copyNo);
+
+        if (available === null)
+            return res.status(404).json({ error: 'Not found' });
+
+        if (available === true)
+            return res.status(409).json({ error: 'Copy is not rented' });
+
+        await markReturned(value.isbn, value.copyNo);
+
+        res.status(200).json({ ISBN: value.isbn, copyNo: value.copyNo, Status: 'D' });
 
     } catch (err) {
         console.error(err);
